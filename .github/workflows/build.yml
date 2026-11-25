@@ -40,17 +40,17 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Install clang-format-19
+    - name: Install clang-format-23
       run: |
         wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main'
+        sudo add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main'
         sudo apt-get update
-        sudo apt-get install -y clang-format-19
+        sudo apt-get install -y clang-format-23
 
     - name: Check formatting
       run: |
         find src -name '*.cpp' -o -name '*.h' \
-          | xargs clang-format-19 --dry-run --Werror
+          | xargs clang-format-23 --dry-run --Werror
 
   get-info:
     runs-on: ubuntu-latest
@@ -100,7 +100,20 @@ jobs:
         with:
           arch: x64
 
-      # The log needs std::ranges::to: libstdc++ 14 or newer with Clang.
+      - name: Use Visual Studio's own clang-cl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $bin = Join-Path $vs 'VC\Tools\Llvm\x64\bin'
+          if (-not (Test-Path (Join-Path $bin 'clang-cl.exe'))) {
+            Write-Error "Visual Studio's C++ Clang tools are not installed ($bin)"
+            exit 1
+          }
+          & (Join-Path $bin 'clang-cl.exe') --version
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "CLANG_CL=$((Join-Path $bin 'clang-cl.exe') -replace '\\','/')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -110,8 +123,8 @@ jobs:
       - name: Configure CMake
         run: |
           cmake -B build -G Ninja \
-            -DCMAKE_CXX_COMPILER="${{ matrix.compiler_cxx }}" \
-            -DCMAKE_C_COMPILER="${{ matrix.compiler_c }}" \
+            -DCMAKE_CXX_COMPILER="${CLANG_CL:-${{ matrix.compiler_cxx }}}" \
+            -DCMAKE_C_COMPILER="${CLANG_CL:-${{ matrix.compiler_c }}}" \
             -DCMAKE_BUILD_TYPE=Debug \
             -DENABLE_TESTS=ON \
             ${{ runner.os == 'macOS' && '-DCMAKE_OSX_ARCHITECTURES=x86_64' || '' }}
@@ -133,13 +146,21 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Setup Visual Studio shell
-      uses: egor-tensin/vs-shell@v2
-      with:
-        arch: x64
+    - name: Use Visual Studio's own clang-cl
+      shell: pwsh
+      run: |
+        $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+        $bin = Join-Path $vs 'VC\Tools\Llvm\x64\bin'
+        if (-not (Test-Path (Join-Path $bin 'clang-cl.exe'))) {
+          Write-Error "Visual Studio's C++ Clang tools are not installed ($bin)"
+          exit 1
+        }
+        & (Join-Path $bin 'clang-cl.exe') --version
+        $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        "CLANG_CL=$((Join-Path $bin 'clang-cl.exe') -replace '\\','/')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Configure CMake
-      run: cmake --fresh -G Ninja -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+      run: cmake --fresh -G Ninja -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON -DCMAKE_C_COMPILER="$env:CLANG_CL" -DCMAKE_CXX_COMPILER="$env:CLANG_CL"
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel $env:NUMBER_OF_PROCESSORS
