@@ -1,0 +1,300 @@
+# SPDX-FileCopyrightText: Copyright 2026 shadPS5 Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+name: Build and Release
+
+on:
+  push:
+    branches-ignore: [Pre-release-shadPS5-*]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' || github.repository != 'shadps5-emu/shadPS5' || github.event_name != 'push' }}
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  reuse:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v6
+    - uses: fsfe/reuse-action@v6
+
+  clang-format:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Install clang-format-19
+      run: |
+        wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository 'deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main'
+        sudo apt-get update
+        sudo apt-get install -y clang-format-19
+
+    - name: Check formatting
+      run: |
+        find src -name '*.cpp' -o -name '*.h' \
+          | xargs clang-format-19 --dry-run --Werror
+
+  get-info:
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.vars.outputs.date }}
+      shorthash: ${{ steps.vars.outputs.shorthash }}
+      fullhash: ${{ steps.vars.outputs.fullhash }}
+    steps:
+    - uses: actions/checkout@v6
+    - name: Get date and git hash
+      id: vars
+      run: |
+        echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        echo "shorthash=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "fullhash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+  test:
+    name: Run C++ Tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-26]
+        include:
+          - os: windows-latest
+            compiler_cxx: clang-cl
+            compiler_c: clang-cl
+          - os: ubuntu-latest
+            compiler_cxx: clang++
+            compiler_c: clang
+          - os: macos-26
+            compiler_cxx: clang++
+            compiler_c: clang
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Setup Visual Studio shell (Windows only)
+        if: runner.os == 'Windows'
+        uses: egor-tensin/vs-shell@v2
+        with:
+          arch: x64
+
+      # The log needs std::ranges::to: libstdc++ 14 or newer with Clang.
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libstdc++-14-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_CXX_COMPILER="${{ matrix.compiler_cxx }}" \
+            -DCMAKE_C_COMPILER="${{ matrix.compiler_c }}" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_TESTS=ON \
+            ${{ runner.os == 'macOS' && '-DCMAKE_OSX_ARCHITECTURES=x86_64' || '' }}
+        shell: bash
+
+      - name: Build all tests
+        run: cmake --build build
+        shell: bash
+
+      - name: Run tests with CTest
+        run: ctest --test-dir build --output-on-failure --progress
+        shell: bash
+
+  windows:
+    runs-on: windows-2025-vs2026
+    needs: get-info
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Setup Visual Studio shell
+      uses: egor-tensin/vs-shell@v2
+      with:
+        arch: x64
+
+    - name: Configure CMake
+      run: cmake --fresh -G Ninja -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel $env:NUMBER_OF_PROCESSORS
+
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: shadps5-win64-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
+        path: ${{github.workspace}}/build/shadPS5.exe
+
+  macos:
+    runs-on: macos-26
+    needs: get-info
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Setup latest Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest
+
+    - name: Install Build Dependencies
+      run: brew install cmake ninja
+
+    - name: Print CPU Info
+      run: sysctl hw machdep.cpu
+
+    - name: Configure CMake
+      run: cmake --fresh -G Ninja -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel $(sysctl -n hw.ncpu)
+
+    - name: Package and Upload macOS artifact
+      run: |
+        mkdir upload
+        mv ${{github.workspace}}/build/shadPS5 upload
+    - uses: actions/upload-artifact@v7
+      with:
+        name: shadps5-macos-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
+        path: upload/
+
+  linux:
+    runs-on: ubuntu-24.04
+    needs: get-info
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt install -y clang libstdc++-14-dev ninja-build mold build-essential
+
+    - name: Print CPU Info
+      run: cat /proc/cpuinfo
+
+    - name: Configure CMake
+      run: cmake --fresh -G Ninja -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold"
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel $(nproc)
+
+    - name: Package and Upload Linux artifact
+      run: |
+        ls -la ${{ github.workspace }}/build/shadPS5
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: shadps5-linux-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}
+        path: ${{ github.workspace }}/build/shadPS5
+
+  linux-gcc:
+    runs-on: ubuntu-24.04
+    needs: get-info
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt install -y gcc-14 g++-14 ninja-build mold build-essential
+
+    - name: Print CPU Info
+      run: cat /proc/cpuinfo
+
+    - name: Configure CMake
+      run: cmake --fresh -G Ninja -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold"
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel $(nproc)
+
+  pre-release:
+    if: github.ref == 'refs/heads/main' && github.repository == 'shadps5-emu/shadPS5' && github.event_name == 'push'
+    needs: [get-info, windows, macos, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.SHADPS5_TOKEN_REPO }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: Pre-release-shadPS5-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.fullhash }}
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v8
+      with:
+        path: ./artifacts
+
+    - name: Make artifacts executable
+      run: |
+        chmod -R a+x ./artifacts/shadps5-linux-*
+        chmod -R a+x ./artifacts/shadps5-macos-*
+
+    - name: Compress individual directories (without parent directory)
+      run: |
+        cd ./artifacts
+        for dir in */; do
+          if [ -d "$dir" ]; then
+            dir_name=${dir%/}
+            echo "Creating zip for $dir_name"
+            (cd "$dir_name" && zip -r "../${dir_name}.zip" .)
+          fi
+        done
+
+    - name: Get latest release information
+      run: |
+        # Empty until shadPS5 has a first full release.
+        last_release_tag=$(gh release view --json tagName --jq '.tagName' 2>/dev/null || true)
+        if [ -n "$last_release_tag" ]; then
+          echo "release_body=Full Changelog: [${last_release_tag}...${{ needs.get-info.outputs.shorthash }}](https://github.com/${{ github.repository }}/compare/${last_release_tag}...${{ needs.get-info.outputs.fullhash }})" >> $GITHUB_ENV
+        else
+          echo "release_body=Commit: [${{ needs.get-info.outputs.shorthash }}](https://github.com/${{ github.repository }}/commit/${{ needs.get-info.outputs.fullhash }})" >> $GITHUB_ENV
+        fi
+
+    - name: Create Pre-Release on GitHub
+      uses: ncipollo/release-action@v1
+      with:
+        token: ${{ secrets.SHADPS5_TOKEN_REPO }}
+        name: "Pre-release-shadPS5-${{ needs.get-info.outputs.date }}-${{ needs.get-info.outputs.shorthash }}"
+        tag: ${{ env.RELEASE_TAG }}
+        commit: ${{ needs.get-info.outputs.fullhash }}
+        draft: false
+        prerelease: true
+        body: ${{ env.release_body }}
+        artifacts: ./artifacts/*.zip
+
+    - name: Delete old pre-releases and tags
+      run: |
+        # Only this workflow's own pre-releases, and never the one just made.
+        gh release list --limit 100 --json tagName,isPrerelease \
+          --jq '.[] | select(.isPrerelease and (.tagName | startswith("Pre-release-shadPS5-"))) | .tagName' |
+        while read -r release_tag; do
+          if [ "$release_tag" != "$RELEASE_TAG" ]; then
+            echo "Deleting old pre-release: $release_tag"
+            gh release delete "$release_tag" --cleanup-tag --yes
+          fi
+        done
