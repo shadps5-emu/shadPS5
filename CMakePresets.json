@@ -1,0 +1,65 @@
+{
+  "version": 9,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 30,
+    "patch": 0
+  },
+  "include": ["cmake/CMake${hostSystemName}Presets.json"],
+  "configurePresets": [
+    {
+      "name": "debug-clang",
+      "displayName": "Clang x64 Debug",
+      "inherits": ["x64-Clang-Base"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "release-clang",
+      "displayName": "Clang x64 Release",
+      "inherits": ["x64-Clang-Base"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "debug-tests-clang",
+      "displayName": "Clang x64 Debug, tests",
+      "inherits": ["x64-Clang-Base"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON"
+      }
+    },
+    {
+      "name": "release-tests-clang",
+      "displayName": "Clang x64 Release, tests",
+      "inherits": ["x64-Clang-Base"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug-clang", "configurePreset": "debug-clang" },
+    { "name": "release-clang", "configurePreset": "release-clang" },
+    { "name": "debug-tests-clang", "configurePreset": "debug-tests-clang" },
+    { "name": "release-tests-clang", "configurePreset": "release-tests-clang" }
+  ],
+  "testPresets": [
+    {
+      "name": "debug-tests-clang",
+      "configurePreset": "debug-tests-clang",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "release-tests-clang",
+      "configurePreset": "release-tests-clang",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+version = 1
+
+[[annotations]]
+path = [
+    "REUSE.toml",
+    ".gitmodules",
+    ".gitignore",
+    "CMakePresets.json",
+    "cmake/CMakeDarwinPresets.json",
+    "cmake/CMakeLinuxPresets.json",
+    "cmake/CMakeWindowsPresets.json",
+    "README.md",
+    "docs/**",
+    "src/dist/shadPS5.ico",
+    "src/dist/shadPS5.rc",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "shadPS5 Project"
+SPDX-License-Identifier = "GPL-2.0-or-later"
+
+[[annotations]]
+path = "externals/cmake-modules/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2009-2010 Iowa State University"
+SPDX-License-Identifier = "BSL-1.0"
