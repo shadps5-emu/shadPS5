@@ -1,0 +1,10 @@
+[submodule "externals/googletest"]
+	path = externals/googletest
+	url = https://github.com/shadexternals/googletest.git
+[submodule "externals/fmt"]
+	path = externals/fmt
+	url = https://github.com/shadexternals/fmt.git
+[submodule "externals/spdlog"]
+	path = externals/spdlog
+	url = https://github.com/shadexternals/spdlog.git
+	branch = v2.x
