@@ -127,8 +127,23 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/common/scm_rev.cpp.in" "${CMAKE_
 message("-- end git things, remote: ${GIT_REMOTE_NAME}, branch: ${GIT_BRANCH}, link: ${GIT_REMOTE_URL}")
 
 
+# STUBS for logging lib,to be removed when the logging lib is fully implemented and integrated into the emulator
+set(STUBS stubs/src/stubs.cpp
+          stubs/include/common/assert.h
+          stubs/include/common/path_util.h
+          stubs/include/common/thread.h
+          stubs/include/core/emulator_settings.h
+)
+
 set(COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/common/scm_rev.cpp
+           src/common/logging/classes.cpp
+           src/common/logging/classes.h
+           src/common/logging/formatter.h
+           src/common/logging/log.cpp
+           src/common/logging/log.h
+           src/common/logging/log_file_sink.h
            src/common/scm_rev.h
+           src/common/types.h
 )
 
 set(EMULATOR src/main.cpp)
@@ -143,15 +158,22 @@ if (WIN32)
     add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
+add_subdirectory(externals)
+
 if(NOT ENABLE_TESTS)
 
 add_executable(shadPS5
     ${COMMON}
     ${EMULATOR}
+    ${STUBS}
 )
 
 target_include_directories(shadPS5 PRIVATE src)
+target_include_directories(shadPS5 PRIVATE stubs/include) #remove when stubs are removed
+target_link_libraries(shadPS5 PRIVATE spdlog::spdlog)
+target_link_libraries(shadPS5 PRIVATE fmt::fmt)
 target_compile_options(shadPS5 PRIVATE ${SHADPS5_WARNINGS})
+
 
 if (WIN32)
     target_sources(shadPS5 PRIVATE src/dist/shadPS5.rc)
