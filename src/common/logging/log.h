@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // History:
 //   2026-11-26  Copied from shadPS4 Emulator Project
+//   2026-11-26  Added ApplySettings() to change the log settings after Setup()
+//   2026-11-27  Fixed deprecated conversion in VLog
 
 #pragma once
 
@@ -26,6 +28,7 @@ enum class Level : std::uint8_t {
 extern std::array<Level, NUM_LOG_CLASSES> g_class_levels;
 
 void Setup(std::string_view shadps4_filename);
+void ApplySettings();
 void Switch(std::string_view game_filename, bool append_log);
 void Shutdown();
 void Flush();
@@ -44,7 +47,7 @@ void VLog(Class log_class, Level level, const char* file, int line, const char* 
 template <typename... Args>
 void Log(Class log_class, Level level, const char* file, int line, const char* func,
          fmt::format_string<Args...> format, Args&&... args) {
-    VLog(log_class, level, file, line, func, format, fmt::make_format_args(args...));
+    VLog(log_class, level, file, line, func, format.get(), fmt::make_format_args(args...));
 }
 
 } // namespace Common::Log

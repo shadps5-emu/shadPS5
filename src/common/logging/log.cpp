@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 // History:
-//   2026-11-26  Copied from shadPS4 Emulator Project
+//   2026-11-19  Copied from shadPS4 Emulator Project
+//   2026-11-26  Added ApplySettings() to change the log settings after Setup()
 
 #include <cstdlib>
 #include <iostream>
@@ -110,6 +111,22 @@ static auto UpdateColorLevels(T sink) {
     return sink;
 }
 
+// The console sink for the configured log type.
+static void CreateConsoleSink() {
+#ifdef _WIN32
+    if (EmulatorSettings.GetLogType() == "wincolor") {
+        g_console_sink = std::make_shared<spdlog::sinks::wincolor_stdout_sink_mt>();
+    } else {
+        g_console_sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
+    }
+
+#else
+    g_console_sink = UpdateColorLevels(std::make_shared<spdlog_stdout>(spdlog::color_mode::always));
+#endif
+
+    g_console_sink->set_pattern("%^%v%$");
+}
+
 void Setup(std::string_view shadps4_filename) {
     static std::once_flag already_registered;
 
@@ -127,18 +144,7 @@ void Setup(std::string_view shadps4_filename) {
 
     // Setup console
 
-#ifdef _WIN32
-    if (EmulatorSettings.GetLogType() == "wincolor") {
-        g_console_sink = std::make_shared<spdlog::sinks::wincolor_stdout_sink_mt>();
-    } else {
-        g_console_sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
-    }
-
-#else
-    g_console_sink = UpdateColorLevels(std::make_shared<spdlog_stdout>(spdlog::color_mode::always));
-#endif
-
-    g_console_sink->set_pattern("%^%v%$");
+    CreateConsoleSink();
 
     // Setup file
 
@@ -146,6 +152,19 @@ void Setup(std::string_view shadps4_filename) {
         (GetUserPath(Common::FS::PathType::LogDir) / shadps4_filename).string(), false,
         EmulatorSettings.GetLogSizeLimit());
     g_shad_file_sink->set_pattern("%^%v%$");
+
+    UpdateSinks();
+}
+
+void ApplySettings() {
+    if (g_shad_file_sink == nullptr) {
+        return;
+    }
+
+#ifdef _WIN32
+    // The console type is only read here and in Setup().
+    CreateConsoleSink();
+#endif
 
     UpdateSinks();
 }

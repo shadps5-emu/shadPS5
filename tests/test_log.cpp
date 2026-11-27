@@ -403,3 +403,38 @@ TEST_F(LogTest, FlushLevel) {
     ASSERT_TRUE(lines.size() == 2);
     EXPECT_TRUE(lines[1].ends_with(": flushes"));
 }
+
+TEST_F(LogTest, ApplySettingsAfterSetup) {
+    // Setup with skipping duplicates on, as the defaults have it...
+    EmulatorSettings.SetLogSkipDuplicate(true);
+    Start();
+    for (int i = 0; i < 3; ++i) {
+        LOG_INFO(Log, "same line");
+    }
+    // ...then the loaded settings turn it off and write asynchronously.
+    EmulatorSettings.SetLogSkipDuplicate(false);
+    EmulatorSettings.SetLogSync(false);
+    Common::Log::ApplySettings();
+    for (int i = 0; i < 3; ++i) {
+        LOG_INFO(Log, "repeated line");
+    }
+    EmulatorSettings.SetLogSync(true);
+    Common::Log::ApplySettings();
+    LOG_INFO(Log, "after switching back to sync");
+
+    int same = 0, repeated = 0, after = 0;
+    for (const auto& l : MainLines()) {
+        same += l.find("same line") != std::string::npos;
+        repeated += l.find("repeated line") != std::string::npos;
+        after += l.find("after switching back") != std::string::npos;
+    }
+    EXPECT_EQ(same, 1);     // duplicates skipped before ApplySettings
+    EXPECT_EQ(repeated, 3); // all kept after it, through the asynchronous sink
+    EXPECT_EQ(after, 1);
+}
+
+TEST_F(LogTest, ApplySettingsBeforeSetupDoesNothing) {
+    EXPECT_NO_THROW(Common::Log::ApplySettings());
+    Common::Log::Flush();
+    EXPECT_TRUE(fs::is_empty(log_dir));
+}
