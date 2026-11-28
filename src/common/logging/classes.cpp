@@ -14,6 +14,8 @@ std::string_view NameOf(Class log_class) {
         return "Log";
     case Class::Common:
         return "Common";
+    case Class::Common_Filesystem:
+        return "Common.Filesystem";
     case Class::Core:
         return "Core";
     case Class::Config:

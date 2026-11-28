@@ -3,36 +3,17 @@
 
 #include <cstdio>
 #include <string>
+#include <fstream>
 
 #include "common/path_util.h"
 #include "common/thread.h"
 #include "core/emulator_settings.h"
+#include "core/file_sys/ifile.h"
 
 // --- common ------------------------------------------------------------------
 
 std::string Common::GetCurrentThreadName() {
 	return "main";
-}
-
-namespace {
-	std::filesystem::path& LogDir() {
-		static std::filesystem::path log_dir = std::filesystem::current_path() /
-			Common::FS::PORTABLE_DIR / Common::FS::LOG_DIR;
-		return log_dir;
-	}
-} // namespace
-
-const std::filesystem::path& Common::FS::GetUserPath(PathType /*user_path*/) {
-	return LogDir();
-}
-
-void Common::FS::SetUserPath(PathType /*user_path*/, const std::filesystem::path& new_path) {
-	LogDir() = new_path;
-}
-
-std::string Common::FS::PathToUTF8String(const std::filesystem::path& path) {
-	const auto u8 = path.u8string();
-	return std::string(u8.begin(), u8.end());
 }
 
 // --- core --------------------------------------------------------------------
@@ -42,3 +23,20 @@ EmulatorSettingsImpl* EmulatorSettingsImpl::GetInstance() {
 	return &instance;
 }
 
+bool Core::FileSys::IsZArchiveFile(const std::filesystem::path& path) {
+	std::error_code ec;
+	return std::filesystem::is_regular_file(path, ec) && path.extension() == ".zar";
+}
+
+std::optional<std::vector<u8>> Core::FileSys::ReadGameFile(const std::filesystem::path& game_root,
+	std::string_view rel_path) {
+	std::error_code ec;
+	if (!std::filesystem::is_directory(game_root, ec)) {
+		return std::nullopt; // no ZArchive support
+	}
+	std::ifstream file(game_root / rel_path, std::ios::binary);
+	if (!file) {
+		return std::nullopt;
+	}
+	return std::vector<u8>(std::istreambuf_iterator<char>(file), {});
+}
