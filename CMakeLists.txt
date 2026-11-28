@@ -130,9 +130,9 @@ message("-- end git things, remote: ${GIT_REMOTE_NAME}, branch: ${GIT_BRANCH}, l
 # STUBS for logging lib,to be removed when the logging lib is fully implemented and integrated into the emulator
 set(STUBS stubs/src/stubs.cpp
           stubs/include/common/assert.h
-          stubs/include/common/path_util.h
           stubs/include/common/thread.h
           stubs/include/core/emulator_settings.h
+          stubs/include/core/file_sys/ifile.h
 )
 
 set(COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/common/scm_rev.cpp
@@ -142,6 +142,8 @@ set(COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/common/scm_rev.cpp
            src/common/logging/log.cpp
            src/common/logging/log.h
            src/common/logging/log_file_sink.h
+           src/common/path_util.cpp
+           src/common/path_util.h
            src/common/scm_rev.h
            src/common/types.h
 )
